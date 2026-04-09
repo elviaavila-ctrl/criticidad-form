@@ -206,10 +206,10 @@ const QUESTIONS = [
 ];
 
 const CRITICALITY = [
-  {min:0,max:29,label:"Baja",color:"#22c55e",bg:"#f0fdf4",desc:"La posición puede gestionarse con los recursos actuales. No requiere acción inmediata."},
-  {min:30,max:45,label:"Media",color:"#f59e0b",bg:"#fffbeb",desc:"Existen algunos riesgos. Se recomienda iniciar planes de desarrollo o documentación."},
-  {min:46,max:55,label:"Alta",color:"#ef4444",bg:"#fef2f2",desc:"Posición crítica. Requiere plan de sucesión activo y atención prioritaria."},
-  {min:56,max:65,label:"Crítica",color:"#7c3aed",bg:"#faf5ff",desc:"Riesgo organizacional significativo. Acción inmediata requerida."},
+  {min:0,max:9,label:"Baja",color:"#22c55e",bg:"#f0fdf4",desc:"La posición puede gestionarse con los recursos actuales. No requiere acción inmediata."},
+  {min:10,max:15,label:"Media",color:"#f59e0b",bg:"#fffbeb",desc:"Existen algunos riesgos. Se recomienda iniciar planes de desarrollo o documentación."},
+  {min:16,max:20,label:"Alta",color:"#ef4444",bg:"#fef2f2",desc:"Posición crítica. Requiere plan de sucesión activo y atención prioritaria."},
+  {min:21,max:25,label:"Crítica",color:"#7c3aed",bg:"#faf5ff",desc:"Riesgo organizacional significativo. Acción inmediata requerida."},
 ];
 
 const getCrit = s => CRITICALITY.find(c=>s>=c.min&&s<=c.max)||CRITICALITY[3];
@@ -308,13 +308,18 @@ function renderPosition(pos, i) {
       </div>
     `).join("")}
     ${crit?`
-    <div class="result" style="background:${crit.bg};border:2px solid ${crit.color}">
+    <div class="result" id="result-${i}" style="background:${crit.bg};border:2px solid ${crit.color}">
       <div class="result-top">
         <div class="dot" style="background:${crit.color}"></div>
         <span class="result-label" style="color:${crit.color}">Criticidad ${crit.label}</span>
-        <span class="result-score" style="color:${crit.color}">Score: ${score}/65</span>
+        <span class="result-score" style="color:${crit.color}">Score: ${score}/25</span>
       </div>
       <div class="result-desc">${crit.desc}</div>
+      <button class="btn-explain" data-idx="${i}" style="margin-top:12px;padding:7px 14px;border-radius:8px;background:${crit.color};color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">
+        ¿Por qué esta criticidad? →
+      </button>
+      <div class="explain-loading" id="explain-loading-${i}" style="display:none;margin-top:10px;font-size:13px;color:${crit.color}">Generando explicación...</div>
+      <div class="explain-text" id="explain-text-${i}" style="display:none;margin-top:12px;padding:12px;border-radius:8px;background:#fff;border:1px solid ${crit.color};font-size:13px;color:#374151;line-height:1.6"></div>
     </div>`:""}
     `:""}
   </div>`;
@@ -392,6 +397,57 @@ function bindEvents() {
 
   const btnReset = document.getElementById("btnReset");
   if (btnReset) btnReset.addEventListener("click",()=>{state={step:0,leaderName:"",division:"",positions:[{subdivision:"",role:"",answers:{}}]};render();});
+
+  // Explain buttons
+  document.querySelectorAll(".btn-explain").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      const idx = parseInt(e.target.dataset.idx);
+      const pos = state.positions[idx];
+      const score = Object.values(pos.answers).reduce((a,b)=>a+b,0);
+      const crit = getCrit(score);
+      const loadEl = document.getElementById(`explain-loading-${idx}`);
+      const textEl = document.getElementById(`explain-text-${idx}`);
+      btn.style.display = "none";
+      loadEl.style.display = "block";
+
+      const answersSummary = QUESTIONS.map(q => {
+        const val = pos.answers[q.id];
+        const label = q.type === "scale"
+          ? `${val} – ${q.labels[val-1]}`
+          : q.options.find(([,v]) => v === val)?.[0] || val;
+        return `- ${q.text}: ${label}`;
+      }).join("\n");
+
+      const prompt = `Eres un experto en gestión del talento y planificación de sucesión.
+Un líder evaluó la posición "${pos.role}" de la subdivisión "${pos.subdivision}" con un score de ${score}/25, resultando en criticidad "${crit.label}".
+
+Respuestas del líder:
+${answersSummary}
+
+Escribe una explicación breve (3-4 oraciones) en español, dirigida al líder, explicando POR QUÉ esta posición tiene criticidad "${crit.label}" basándote específicamente en sus respuestas. Sé concreto y accionable. No uses bullet points.`;
+
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1000,
+            messages: [{role: "user", content: prompt}]
+          })
+        });
+        const data = await res.json();
+        const text = data.content?.[0]?.text || "No se pudo generar la explicación.";
+        loadEl.style.display = "none";
+        textEl.innerHTML = `<strong style="color:${crit.color}">Análisis:</strong><br>${text}`;
+        textEl.style.display = "block";
+      } catch {
+        loadEl.style.display = "none";
+        textEl.innerHTML = "Hubo un error al generar la explicación. Intenta de nuevo.";
+        textEl.style.display = "block";
+      }
+    });
+  });
 
   // Remove position
   document.querySelectorAll("[data-remove]").forEach(btn=>{
