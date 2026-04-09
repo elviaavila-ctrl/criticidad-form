@@ -318,7 +318,6 @@ function renderPosition(pos, i) {
       <button class="btn-explain" data-idx="${i}" style="margin-top:12px;padding:7px 14px;border-radius:8px;background:${crit.color};color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">
         ¿Por qué esta criticidad? →
       </button>
-      <div class="explain-loading" id="explain-loading-${i}" style="display:none;margin-top:10px;font-size:13px;color:${crit.color}">Generando explicación...</div>
       <div class="explain-text" id="explain-text-${i}" style="display:none;margin-top:12px;padding:12px;border-radius:8px;background:#fff;border:1px solid ${crit.color};font-size:13px;color:#374151;line-height:1.6"></div>
     </div>`:""}
     `:""}
@@ -427,13 +426,20 @@ ${answersSummary}
 Escribe una explicación breve (3-4 oraciones) en español, dirigida al líder, explicando POR QUÉ esta posición tiene criticidad "${crit.label}" basándote específicamente en sus respuestas. Sé concreto y accionable. No uses bullet points.`;
 
       try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
+        const res = await fetch(SHEET_URL + "?action=explain", {
+          method: "POST",
+          mode: "no-cors",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({action: "explain", prompt})
+        });
+        // no-cors no permite leer la respuesta, usar proxy alternativo
+        const res2 = await fetch("https://api.allorigins.win/post?url=" + encodeURIComponent("https://api.anthropic.com/v1/messages"), {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({
+            prompt,
             model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
-            messages: [{role: "user", content: prompt}]
+            max_tokens: 1000
           })
         });
         const data = await res.json();
